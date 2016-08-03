@@ -1,0 +1,248 @@
+package routines;
+
+/*
+ * user specification: the function's comment should contain keys as follows: 1. write about the function's comment.but
+ * it must be before the "{talendTypes}" key.
+ * 
+ * 2. {talendTypes} 's value must be talend Type, it is required . its value should be one of: String, char | Character,
+ * long | Long, int | Integer, boolean | Boolean, byte | Byte, Date, double | Double, float | Float, Object, short |
+ * Short
+ * 
+ * 3. {Category} define a category for the Function. it is required. its value is user-defined .
+ * 
+ * 4. {param} 's format is: {param} <type>[(<default value or closed list values>)] <name>[ : <comment>]
+ * 
+ * <type> 's value should be one of: string, int, list, double, object, boolean, long, char, date. <name>'s value is the
+ * Function's parameter name. the {param} is optional. so if you the Function without the parameters. the {param} don't
+ * added. you can have many parameters for the Function.
+ * 
+ * 5. {example} gives a example for the Function. it is optional.
+ */
+
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+
+public class XLSParser {
+
+	/**
+	 * helloExample: not return value, only print "hello" + message.
+	 * 
+	 * 
+	 * {talendTypes} String
+	 * 
+	 * {Category} User Defined
+	 * 
+	 * {param} string("world") input: The string need to be printed.
+	 * 
+	 * {example} helloExemple("world") # hello world !.
+	 */
+	public static void helloExample(String message) {
+		if (message == null) {
+			message = "World"; //$NON-NLS-1$
+		}
+		System.out.println("Hello " + message + " !"); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
+	/**
+	 * Returns mappings of 1st column(topic)-3rd column(tagId) and 2nd
+	 * Column(subtitle)-3rd Column(tagid) in the form of a json.
+	 * 
+	 * @param filePath
+	 * @param sheetNo
+	 * @return
+	 * @throws JSONException
+	 */
+	public static JSONObject getTopicMappingFromExcel(String filePath,
+			int sheetNo) throws JSONException {
+
+		JSONObject topicMappingJSON = new JSONObject();
+		FileInputStream file;
+		try {
+			file = new FileInputStream(new File(filePath));
+			// System.out.println("filepath is"+file);
+			XSSFWorkbook workbook = new XSSFWorkbook(file);
+
+			// Get first sheet from the workbook
+			XSSFSheet sheet = workbook.getSheetAt(sheetNo);
+
+			// Get iterator to all the rows in current sheet
+			Iterator<Row> rowIterator = sheet.iterator();
+			while (rowIterator.hasNext()) {
+				Row row = rowIterator.next();
+				if (row.getRowNum() != 0) {
+					// For each row, iterate through each columns
+					Cell topicCell = row.getCell(0);
+					Cell subtitleCell = row.getCell(1);
+					Cell tagIdCell = row.getCell(2);
+					String tagId = tagIdCell==null ? "" : row.getCell(2).getStringCellValue();
+					if (topicCell != null) {
+						String topic = topicCell.getStringCellValue();
+						if (topic != null && !topic.equals("")) {
+							topicMappingJSON.put(topic, tagId);
+						}
+					}
+					if (subtitleCell != null) {
+						String subtitle = subtitleCell.getStringCellValue();
+						if (subtitle != null && !subtitle.equals("")) {
+							topicMappingJSON.put(subtitle, tagId);
+						}
+					}
+				}
+			}
+			file.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println("topic mapping json is" + topicMappingJSON);
+		return topicMappingJSON;
+	}
+
+	/**
+	 * 
+	 * Returns a Map of :
+	 * 0th Column(fileRef)-list of [ 1st_Column(subtitle)-("articleType"-2nd Column and "articleColumn"-3rd_Column) ].
+	 * 
+	 * @param filePath
+	 * @param sheetNo
+	 * @return
+	 * @throws JSONException
+	 */
+	public static HashMap<String, ArrayList<HashMap<String, HashMap<String, String>>>> getArticleMappingFromExcel(
+			String filePath, int sheetNo) throws JSONException {
+		HashMap<String, ArrayList<HashMap<String, HashMap<String, String>>>> articleMap = new HashMap<String, ArrayList<HashMap<String, HashMap<String, String>>>>();
+		// JSONObject articleMapping = new JSONObject();
+		try {
+			FileInputStream file = new FileInputStream(new File(filePath));
+			// Get the workbook instance for XLS file
+			XSSFWorkbook workbook = new XSSFWorkbook(file);
+			XSSFSheet sheet = workbook.getSheetAt(sheetNo);
+
+			// Get iterator to all the rows in current sheet
+			Iterator<Row> rowIterator = sheet.iterator();
+
+			while (rowIterator.hasNext()) {
+				Row row = rowIterator.next();
+				if (row.getRowNum() != 0) {
+					// For each row, iterate through each columns
+					String fileRef = row.getCell(0).getStringCellValue();
+					if (fileRef != null && !fileRef.equals("")) {
+						if (articleMap.get(fileRef) != null) {
+							ArrayList<HashMap<String, HashMap<String, String>>> subtitleList = articleMap
+									.get(fileRef);
+							subtitleList.add(populateSubtitleMap(row));
+							articleMap.put(fileRef, subtitleList);
+						} else {
+							ArrayList<HashMap<String, HashMap<String, String>>> subtitleList = new ArrayList<HashMap<String, HashMap<String, String>>>();
+							subtitleList.add(populateSubtitleMap(row));
+							articleMap.put(fileRef, subtitleList);
+						}
+
+					}
+
+				}
+			}
+			file.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println("Article map is" + articleMap);
+		return articleMap;
+	}
+
+	/**
+	 * Returns Map containing mappings between String-Hashmap:
+	 * 1st_Column(subtitle)-("articleType"-2nd Column and "articleColumn"-3rd_Column).
+	 * 
+	 * @param row
+	 * @return
+	 */
+	public static HashMap<String, HashMap<String, String>> populateSubtitleMap(
+			Row row) {
+		HashMap<String, HashMap<String, String>> subtitleMap = new HashMap<String, HashMap<String, String>>();
+		Cell subtitleCell = row.getCell(1);
+		String subtitle = subtitleCell.getStringCellValue();
+		if (subtitle != null && !subtitle.equals("")) {
+			HashMap<String, String> map = new HashMap<String, String>();
+			String aemArticleType = row.getCell(2).getStringCellValue();
+			map.put("articleType", aemArticleType);
+			Cell articleColumnCell = row.getCell(3);
+			if (articleColumnCell != null && !articleColumnCell.equals("")) {
+				map.put("articleColumn", articleColumnCell.getStringCellValue());
+			} else {
+				map.put("articleColumn", "");
+			}
+			subtitleMap.put(subtitle.trim().toUpperCase(), map);
+		}
+		return subtitleMap;
+	}
+
+	/**
+	 * Returns Mappings of 1st Column(dirPath)-2nd column(imagePath) in the form
+	 * of json.
+	 *
+	 * @param filePath
+	 * @param sheetNo
+	 * @return
+	 * @throws JSONException
+	 */
+	public static JSONObject getIssueCoverImagesFromExcel(String filePath,
+			int sheetNo) throws JSONException {
+
+		JSONObject imageCoversJSON = new JSONObject();
+		FileInputStream file;
+		try {
+			file = new FileInputStream(new File(filePath));
+			// System.out.println("filepath is"+file);
+			XSSFWorkbook workbook = new XSSFWorkbook(file);
+
+			// Get first sheet from the workbook
+			XSSFSheet sheet = workbook.getSheetAt(sheetNo);
+
+			// Get iterator to all the rows in current sheet
+			Iterator<Row> rowIterator = sheet.iterator();
+			while (rowIterator.hasNext()) {
+				Row row = rowIterator.next();
+				if (row.getRowNum() != 0) {
+					// For each row, iterate through each columns
+					Cell dirPathCell = row.getCell(0);
+					Cell imagePathCell = row.getCell(1);
+					if (dirPathCell != null && imagePathCell != null) {
+						String dirPath = dirPathCell.getStringCellValue();
+						String imagePath = imagePathCell.getStringCellValue();
+						if ((dirPath != null && !dirPath.equals(""))
+								&& (imagePath != null && !imagePath.equals(""))) {
+							imageCoversJSON.put(dirPath.trim(),
+									imagePath.trim());
+						}
+					}
+				}
+			}
+			file.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println("image cover json is" + imageCoversJSON);
+		return imageCoversJSON;
+	}
+
+}

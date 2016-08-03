@@ -1,0 +1,1004 @@
+package routines;
+
+import java.io.File;
+import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+import org.joda.time.LocalDateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.xml.sax.SAXException;
+
+/*
+ * user specification: the function's comment should contain keys as follows: 1. write about the function's comment.but
+ * it must be before the "{talendTypes}" key.
+ * 
+ * 2. {talendTypes} 's value must be talend Type, it is required . its value should be one of: String, char | Character,
+ * long | Long, int | Integer, boolean | Boolean, byte | Byte, Date, double | Double, float | Float, Object, short |
+ * Short
+ * 
+ * 3. {Category} define a category for the Function. it is required. its value is user-defined .
+ * 
+ * 4. {param} 's format is: {param} <type>[(<default value or closed list values>)] <name>[ : <comment>]
+ * 
+ * <type> 's value should be one of: string, int, list, double, object, boolean, long, char, date. <name>'s value is the
+ * Function's parameter name. the {param} is optional. so if you the Function without the parameters. the {param} don't
+ * added. you can have many parameters for the Function.
+ * 
+ * 5. {example} gives a example for the Function. it is optional.
+ */
+
+enum Month {
+
+	JANUARY(1), FEBRUARY(2), MARCH(3), APRIL(4), MAY(5), JUNE(6), JULY(7), AUGUST(
+			8), SEPTEMBER(9), OCTOBER(10), NOVEMBER(11), DECEMBER(12);
+
+	private int monthNum;
+	private String shortName;
+
+	static {
+		JANUARY.shortName = "jan";
+		FEBRUARY.shortName = "feb";
+		MARCH.shortName = "mar";
+		APRIL.shortName = "apr";
+		MAY.shortName = "may";
+		JUNE.shortName = "jun";
+		JULY.shortName = "jul";
+		AUGUST.shortName = "aug";
+		SEPTEMBER.shortName = "sep";
+		OCTOBER.shortName = "oct";
+		NOVEMBER.shortName = "nov";
+		DECEMBER.shortName = "dec";
+	}
+
+	public String getShortName() {
+		return shortName;
+	}
+
+	Month(int num) {
+		monthNum = num;
+	}
+
+	public int getMonthNum() {
+		return monthNum;
+	}
+}
+
+public class Utility {
+
+	static int schoolPageCounter = 0;
+	static int coursePageCounter = 0;
+	// final static Pattern imgTagPattern = Pattern
+	// .compile("[<&lt;]img[^>]*src=[\"'&quot;]([^\"'&quot;]*)[\"'&quot;][^>]*\\/?[&gt;>]");
+	final static Pattern imgTagPattern = Pattern
+			.compile("(&lt;|<)img[^>]*src=(\"|'|&quot;)([^\"']*|&quot;)([\"']|&quot;)([^>]*|&gt;)\\/?(&gt;|>)");
+	// final static Pattern anchorTagPattern = Pattern
+	// .compile("[<&lt;]a[^>]*href=[\"'&quot;]([^\"'&quot;]*)[\"'&quot;][^>]*[&gt;>]");
+	final static Pattern anchorTagPattern = Pattern
+			.compile("(&lt;|<)a[^>]*href=(\"|'|&quot;)([^\"']*|&quot;)([\"']|&quot;)([^>]*|&gt;)\\/?(&gt;|>)");
+
+	private static DocumentBuilder docBuilder;
+
+	private static HashMap<String, String> urlMap = new HashMap<String, String>();
+
+	public static File createContentStructure(String targetDir,
+			String srcTemplateFilePath) throws IOException {
+		File packageDirectory = new File(targetDir);
+		packageDirectory.mkdirs();
+
+		File parentFile = packageDirectory.getParentFile();
+		createParentContentStructure(parentFile, srcTemplateFilePath);
+		return packageDirectory;
+	}
+
+	private static void createParentContentStructure(File parentDir,
+			String srcTemplatePath) throws IOException {
+		if (parentDir.getName().equalsIgnoreCase("content")) {
+			// return null;
+		} else {
+			File contentXml = new File(parentDir, ".content.xml");
+
+			if (contentXml.exists()) {
+				// Do nothing.
+			} else {
+				// Else, copy standard template content xml file kept at a
+				// standard location
+				File srcTemplateFile = new File(srcTemplatePath);
+				FileUtils.copyFileToDirectory(srcTemplateFile, parentDir);
+				// updateXmlFile(contentXml.getPath(), parentDir.getName());
+
+				createParentContentStructure(parentDir.getParentFile(),
+						srcTemplatePath);
+			}
+		}
+	}
+
+	public static boolean contentXMLExists(String fileName) throws IOException {
+		System.out.println("file path is" + fileName);
+		File contentXml = new File(fileName);
+		if (contentXml.exists()) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	public static void createContentXML(String dirPath,
+			String templateFilePath, String property, String text)
+			throws IOException {
+		File parentDir = new File(dirPath);
+		File contentXml = new File(dirPath, ".content.xml");
+		if (!contentXml.exists()) {
+			System.out.println("File being created is"
+					+ contentXml.getAbsolutePath());
+			File srcTemplateFile = new File(templateFilePath);
+			FileUtils.copyFileToDirectory(srcTemplateFile, parentDir);
+			updateXmlFile(contentXml.getPath(), "jcr:content", property, text);
+		}
+	}
+
+	public static String getIssuePageTitle(String year, String monthName) {
+		String title = monthName;
+		// String temp = dirPath.substring(0, dirPath.lastIndexOf("/"));
+		// String year = temp.substring(temp.lastIndexOf("/") + 1);
+		for (Month m : Month.values()) {
+			if (m.getShortName().equals(monthName.toLowerCase())) {
+				title = StringUtils.capitalize(m.toString().toLowerCase())
+						+ " " + year;
+				break;
+			}
+		}
+		System.out.println("title for issue landing page is " + title);
+		return title;
+	}
+
+	public static String getPathFromURL(String xmlFilePath) {
+		String url = getNodeFromXML(xmlFilePath, "url").getTextContent();
+		System.out.println("URL is " + url);
+		String folderPath = url.replaceFirst("http://www.k12.com/", "").trim();
+		folderPath.replaceFirst("/$", "").toLowerCase()
+				.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+				.replaceAll("-+", "-").replaceAll("-$", "");
+		System.out.println("folder path is " + folderPath);
+		return folderPath;
+	}
+
+	public static String getSchoolPageName(String xmlFilePath) {
+		String name = getNodeFromXML(xmlFilePath, "name").getTextContent();
+		String schoolName = "";
+		if (name != null && !name.trim().equals("")) {
+			schoolName = name.trim().toLowerCase().replace(" ", "-");
+		} else {
+			/*
+			 * Node acronym=getNodeFromXML(xmlFilePath, "acronym");
+			 * if(acronym!=null){ String acronymText=acronym.getTextContent();
+			 * if(acronymText!=null && !acronymText.trim().equals("") ){
+			 * schoolName=acronymText.trim().toLowerCase().replace(" ", "-");
+			 * }else{ schoolName="school-page"+schoolPageCounter++; } }
+			 */
+			schoolName = "school-page" + schoolPageCounter++;
+		}
+		System.out.println("School page name is" + schoolName);
+		return schoolName;
+	}
+
+	public static String getCoursePageName(String xmlFilePath) {
+		Node courseCode = getNodeFromXML(xmlFilePath, "course_code_short");
+		String courseName = "";
+		String courseCodeName = "";
+		if (courseCode != null
+				&& !(courseCodeName = courseCode.getTextContent()).equals("")) {
+			// String courseCodeName=courseCode.getTextContent();
+			courseName = courseCodeName.trim().toLowerCase()
+					.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+					.replaceAll("-+", "-").replaceAll("-$", "");
+		} else {
+			courseName = "course-page" + coursePageCounter++;
+		}
+		System.out.println("Course page name is" + courseName);
+		return courseName;
+	}
+
+	public static String getFileNameFromURL(String folderPath) {
+		String pageName = folderPath.substring(folderPath.lastIndexOf("/") + 1);
+		return pageName.trim().toLowerCase()
+				.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+				.replaceAll("-+", "-").replaceAll("-$", "");
+	}
+
+	public static String getFileNameFromURL(String xmlFilePath, String nodeName) {
+		String url = getNodeTextFromXML(xmlFilePath, nodeName);
+		String pageName = url.substring(url.lastIndexOf("/") + 1).replaceFirst(
+				".aspx$", "");
+		System.out.println("page name is" + pageName);
+		return pageName.trim().toLowerCase()
+				.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+				.replaceAll("-+", "-").replaceAll("-$", "");
+	}
+
+	public static Node getNodeFromXML(String xmlFilePath, String tagName) {
+		try {
+			DocumentBuilder documentBuilder = getDocumentBuilderInstance();
+			Document document = documentBuilder.parse(xmlFilePath);
+
+			Node node = document.getElementsByTagName(tagName).item(0);
+			return node;
+		} catch (ParserConfigurationException pce) {
+			System.err.println(pce);
+		} catch (IOException ioe) {
+			System.err.println(ioe);
+		} catch (SAXException sae) {
+			System.err.println(sae);
+		}
+		return null;
+	}
+
+	public static String getNodeTextFromXML(String xmlFilePath, String tagName) {
+		Node node = getNodeFromXML(xmlFilePath, tagName);
+		String nodeText = node.getTextContent();
+		return nodeText != null ? nodeText.trim() : "";
+	}
+
+	public static boolean isValidPageType(String xmlFilePath) {
+		String type = getNodeTextFromXML(xmlFilePath, "type");
+		System.out.println("Type is " + type);
+		if (type.trim().equals("course") || type.trim().equals("school")) {
+			return false;
+		} else {
+			return true;
+		}
+		// System.out.println("Modified image tag path is " + modifiedContent);
+	}
+
+	public static void updateImageTags(String xmlFilePath, String nodeName) {
+		String body = getNodeTextFromXML(xmlFilePath, nodeName);
+		// System.out.println("Body is " + body);
+		String modifiedContent = updateAssetReference(body);
+		System.out.println("Modified image tag path is " + modifiedContent);
+		updateXmlFile(xmlFilePath, nodeName, modifiedContent);
+
+	}
+
+	public static void updateDateFields(String xmlFilePath, String nodeName) {
+		String nodeText = getNodeTextFromXML(xmlFilePath, nodeName);
+		System.out.println("Body is " + nodeText);
+		if (!nodeText.equals("")) {
+			int index;
+			if ((index = nodeText.indexOf(" ")) != -1) {
+				nodeText = nodeText.trim().substring(0, nodeText.indexOf(" "));
+			}
+			System.out.println("Modiifed date is " + nodeText);
+			updateXmlFile(xmlFilePath, nodeName, nodeText);
+		}
+	}
+
+	public static void updateFileRef(String xmlFilePath, String nodeName) {
+		String nodeText = getNodeTextFromXML(xmlFilePath, nodeName);
+		System.out.println("Body is " + nodeText);
+		String modifiedContent = getValidHrefPath(nodeText);
+		System.out.println("Modified file ref is " + modifiedContent);
+		updateXmlFile(xmlFilePath, nodeName, modifiedContent);
+	}
+
+	public static void updateAnchorTags(String xmlFilePath, String nodeName) {
+		String nodeText = getNodeTextFromXML(xmlFilePath, nodeName);
+		// System.out.println("Body is " + nodeText);
+		String modifiedContent = updateLinkReference(nodeText);
+		System.out.println("Modified anchor tag path is " + modifiedContent);
+		updateXmlFile(xmlFilePath, nodeName, modifiedContent);
+	}
+
+	public static void updateMultiFields(String xmlFilePath, String[] tagNames) {
+		for (String tag : tagNames) {
+			String text = getNodeTextFromXML(xmlFilePath, tag);
+			if (!text.equals("")) {
+				System.out.println("Tag " + tag + " content is " + text);
+				text = text.replaceFirst(",$", "");
+				String[] values = text.split(",");
+				String modifiedContent = "[";
+				for (String val : values) {
+					modifiedContent += val.trim() + ",";
+				}
+				modifiedContent = modifiedContent.replaceFirst(",$", "") + "]";
+				System.out.println("Modified Tag " + tag + " content is "
+						+ modifiedContent);
+				updateXmlFile(xmlFilePath, tag, modifiedContent);
+			}
+		}
+	}
+
+	public static String getIssueCover(final String dirPath,
+			final JSONObject imageCoverJSON) {
+		String issueCover = "/content/dam/tta/tta-default-cover-image.jpg";
+		// System.out.println("Issue cover mapping received is" +
+		// imageCoverJSON);
+		System.out.println("Directory path is " + dirPath);
+		String contentPath = dirPath
+				.replaceAll(
+						"/media/ttnd/Data/Migration-Content/TTA/TTA-Migration/output/pages/tta-migration-content/jcr_root",
+						"");
+		try {
+			if (imageCoverJSON.getString(contentPath.trim()) != null) {
+				issueCover = imageCoverJSON.getString(contentPath.trim());
+			}
+		} catch (JSONException e) {
+			System.out
+					.println("Not able to find the issueCover " + contentPath);
+			e.printStackTrace();
+		}
+		return issueCover;
+	}
+
+	/**
+	 * Returns a JSON array of all the mapped tagids present in topicMap against
+	 * the Values for given 'tagNames' found in xml.
+	 * 
+	 * @param xmlFilePath
+	 * @param topicMapping
+	 * @param tagNames
+	 * @return
+	 */
+	public static String getTopicMapping(final String xmlFilePath,
+			final JSONObject topicMapping, String... tagNames) {
+		// System.out.println("Topic mapping received is" + topicMapping);
+		String modifiedContent = "[";
+		for (String tag : tagNames) {
+			String text = getNodeTextFromXML(xmlFilePath, tag);
+			if (!text.equals("")) {
+				System.out.println("Tag " + tag + " content is " + text);
+				text = text.replaceFirst(",$", "");
+				String[] values = text.split(",");
+				for (String val : values) {
+					System.out.println("val is" + val);
+					if (!val.trim().equalsIgnoreCase("Tax")) {
+						try {
+							System.out.println("Topic String is "
+									+ topicMapping.getString(val.trim()));
+							modifiedContent += topicMapping.getString(val
+									.trim()) + ",";
+						} catch (JSONException e) {
+							System.err.println("Not able to find the key "
+									+ val);
+							// e.printStackTrace();
+						}
+					}
+				}
+				// updateXmlFile(xmlFilePath, tag, modifiedContent);
+			}
+		}
+		modifiedContent = modifiedContent.replaceFirst(",$", "") + "]";
+		System.out.println("Modified Tag content is " + modifiedContent);
+		return modifiedContent;
+	}
+
+	public static HashMap<String, String> getArticleMapping(
+			final String xmlFilePath,
+			final HashMap<String, ArrayList<HashMap<String, HashMap<String, String>>>> articleMapping,
+			String fileRefNodeName, String subtitleNodeName)
+			throws JSONException {
+		// String modifiedContent = "[";
+		// System.out.println("Article mapping object in the method is"
+		// + articleMapping);
+		// Node fileRefnode = getNodeFromXML(xmlFilePath, fileRefNodeName);
+		// Node subtitleNode = getNodeFromXML(xmlFilePath, subtitleNodeName);
+		String fileRef = getNodeTextFromXML(xmlFilePath, fileRefNodeName);
+		String subtitle = getNodeTextFromXML(xmlFilePath, subtitleNodeName);
+		HashMap<String, String> articleMap = null;
+		if (!fileRef.equals("")) {
+			System.out.println("File Ref is " + fileRef);
+			if (fileRef.toLowerCase().startsWith(
+					"/Publications/TaxAdviser/".toLowerCase())) {
+				fileRef = "/Publications/TaxAdviser/";
+				if (!subtitle.equals("")) {
+					subtitle = subtitle.toUpperCase();
+				} else if (subtitle.equals("")) {
+					subtitle = "OTHERS";
+				}
+			} else if (fileRef.toLowerCase().startsWith(
+					"/InterestAreas/Tax".toLowerCase())) {
+				fileRef = "/InterestAreas/Tax/";
+				subtitle = "ANY";
+			}
+			System.out.println("subtitle is " + subtitle);
+			if (articleMapping.get(fileRef) != null) {
+				ArrayList<HashMap<String, HashMap<String, String>>> subtitleList = articleMapping
+						.get(fileRef);
+
+				articleMap = parseList(subtitleList, subtitle);
+			}
+
+			if (articleMap == null
+					&& fileRef.equalsIgnoreCase("/Publications/TaxAdviser/")
+					&& !subtitle.equals("OTHERS")) {
+				ArrayList<HashMap<String, HashMap<String, String>>> subtitleList = articleMapping
+						.get(fileRef);
+				articleMap = parseList(subtitleList, "OTHERS");
+				if (articleMap != null) // TODO: Added NPE check
+					articleMap.put("articleColumn", subtitle);
+			}
+
+		}
+
+		return articleMap;
+		/*
+		 * modifiedContent = modifiedContent.replaceFirst(",$", "") + "]";
+		 * System.out.println("Modified Tag content is " + modifiedContent);
+		 * return modifiedContent;
+		 */
+	}
+
+	public static HashMap<String, String> parseList(
+			ArrayList<HashMap<String, HashMap<String, String>>> subtitleList,
+			String subtitle) {
+		if (subtitleList != null) {
+			for (HashMap<String, HashMap<String, String>> sub : subtitleList) {
+				if (sub.get(subtitle.toUpperCase()) != null) {
+					System.out.println("key found is"
+							+ sub.get(subtitle.toUpperCase()));
+					return sub.get(subtitle.toUpperCase());
+				}
+			}
+		}
+		// TODO: Check if empty list should be returned or null
+		return null;
+	}
+
+	/**
+	 * Returns a string fileName + val of property(count) +.xml on first child
+	 * of parentTag.
+	 * 
+	 * @param xmlFilePath
+	 * @param parentTag
+	 * @param property
+	 * @param fileName
+	 * @return
+	 */
+	public static String getFileNameToBeDeleted(String xmlFilePath,
+			String parentTag, String property, String fileName) {
+
+		try {
+			DocumentBuilder documentBuilder = getDocumentBuilderInstance();
+			Document document = documentBuilder.parse(xmlFilePath);
+
+			Node node = document.getElementsByTagName(parentTag).item(0);
+			NamedNodeMap attribute = node.getAttributes();
+			Node nodeAttr = attribute.getNamedItem(property);
+			String count = nodeAttr.getTextContent();
+			System.out.println("Value of " + property + " attribute is "
+					+ count);
+			return fileName + count + ".xml";
+			// return
+			// xmlFilePath.substring(0,xmlFilePath.lastIndexOf("/")+1).concat(fileName);
+		} catch (ParserConfigurationException pce) {
+			System.err.println(pce);
+		} catch (IOException ioe) {
+			System.err.println(ioe);
+		} catch (SAXException sae) {
+			System.err.println(sae);
+		}
+
+		return "";
+	}
+
+	/**
+	 * Updates the value of 'property' attribute of the first 'parentTag' XML
+	 * element in the XML at given 'xmlFilePath' with the 'title' value.
+	 * 
+	 * @param xmlFilePath
+	 * @param parentTag
+	 * @param property
+	 * @param title
+	 * @return
+	 */
+	public static String updateXmlFile(String xmlFilePath, String parentTag,
+			String property, String title) {
+
+		try {
+			DocumentBuilder documentBuilder = getDocumentBuilderInstance();
+			Document document = documentBuilder.parse(xmlFilePath);
+
+			Node node = document.getElementsByTagName(parentTag).item(0);
+			if (node != null) {// TODO: Added NPE Check
+				NamedNodeMap attribute = node.getAttributes();
+				Node nodeAttr = attribute.getNamedItem(property);
+				if (nodeAttr != null) {// TODO: Added NPE check
+					nodeAttr.setTextContent(title);
+
+					TransformerFactory transformerFactory = TransformerFactory
+							.newInstance();
+					Transformer transformer = transformerFactory
+							.newTransformer();
+					DOMSource domSource = new DOMSource(document);
+
+					StreamResult streamResult = new StreamResult(new File(
+							xmlFilePath));
+					transformer.transform(domSource, streamResult);
+				}
+			}
+		} catch (ParserConfigurationException pce) {
+			System.err.println(pce);
+		} catch (TransformerException tfe) {
+			System.err.println(tfe);
+		} catch (IOException ioe) {
+			System.err.println(ioe);
+		} catch (SAXException sae) {
+			System.err.println(sae);
+		}
+
+		return "";
+	}
+
+	/**
+	 * This method specifically updates the intermediary XML ('2014', '2005',
+	 * 'aug', 'jan' etc) file's jcr:title property.
+	 * 
+	 * @param xmlFilePath
+	 *            - Target xml file
+	 * @param title
+	 * @return
+	 */
+	public static void updateXmlFile(String xmlFilePath, String tagName,
+			String text) {
+
+		try {
+			DocumentBuilder documentBuilder = getDocumentBuilderInstance();
+			Document document = documentBuilder.parse(xmlFilePath);
+
+			Node node = document.getElementsByTagName(tagName).item(0);
+			node.setTextContent(text);
+
+			TransformerFactory transformerFactory = TransformerFactory
+					.newInstance();
+			Transformer transformer = transformerFactory.newTransformer();
+			DOMSource domSource = new DOMSource(document);
+
+			StreamResult streamResult = new StreamResult(new File(xmlFilePath));
+			transformer.transform(domSource, streamResult);
+		} catch (ParserConfigurationException pce) {
+			System.err.println(pce);
+		} catch (TransformerException tfe) {
+			System.err.println(tfe);
+		} catch (IOException ioe) {
+			System.err.println(ioe);
+		} catch (SAXException sae) {
+			System.err.println(sae);
+		}
+	}
+
+	static DocumentBuilder getDocumentBuilderInstance()
+			throws ParserConfigurationException {
+		if (docBuilder == null) {
+			DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory
+					.newInstance();
+			docBuilder = documentBuilderFactory.newDocumentBuilder();
+		}
+
+		return docBuilder;
+	}
+
+	public static String updateAssetReference(String htmlFragment) {
+		Matcher tagMatcher = imgTagPattern.matcher(htmlFragment);
+		StringBuffer modifiedSourceHtml = new StringBuffer();
+
+		while (tagMatcher.find()) {
+			String imageTag = tagMatcher.group();
+			System.out.println("Image Tag before replacement is" + imageTag);
+			String imageSrc = tagMatcher.group(3);
+			System.out.println("Image Src before replacement is" + imageSrc);
+			String validAssetPath = getValidAssetPath(imageSrc);
+			System.out.println("Image src after replacement is"
+					+ validAssetPath);
+
+			String newImgTag = imageTag.replaceFirst(imageSrc, validAssetPath);
+			System.out.println("Image Tag after replacement is" + newImgTag);
+			tagMatcher.appendReplacement(modifiedSourceHtml, newImgTag);
+		}
+		tagMatcher.appendTail(modifiedSourceHtml);
+		return modifiedSourceHtml.toString();
+	}
+
+	public static String getValidAssetPath(final String src) {
+		/*
+		 * String replacedText = src.replaceFirst("/sites/default/files",
+		 * "/content/dam/k12").toLowerCase(); return
+		 * replacedText.replaceAll("[\\(\\)#%&+“”\\s+]", "-");
+		 */
+		String replacedText = src;
+		if (src.toLowerCase().startsWith(
+				"/Publications/TaxAdviser/".toLowerCase())) {
+			String fileName = getFileNameFromURL(src);
+			String folderPath = getFolderPathForPrintIssues(src);
+			replacedText = "/content/dam/tta/issues/" + folderPath + "/"
+					+ fileName;
+			return replacedText.toLowerCase()
+					.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+					.replaceAll("-+", "-").replaceAll("-$", "");
+
+		} else if (src.toLowerCase().startsWith(
+				"/InterestAreas/Tax/NewsAndPublications/taxnews".toLowerCase())) {
+			replacedText = src
+					.replaceFirst(
+							"/InterestAreas/Tax/NewsAndPublications/taxnews/PublishingImages",
+							"/content/dam/tta/news/2013/apr/");
+			replacedText = replacedText.replaceFirst("/$", "")
+					.replaceFirst(".aspx$", ".html").trim();
+			// return replacedText.toLowerCase();
+			return replacedText.toLowerCase()
+					.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+					.replaceAll("-+", "-").replaceAll("-$", "");
+		} else if (src.startsWith("/")) {
+			replacedText = "http://www.aicpa.org" + replacedText;
+		} else if (src.startsWith("http://") || src.startsWith("https://")) {
+			return src;
+		}
+		return src;
+	}
+
+	/**
+	 * Replaces all the HREF Urls with the new ones in the provided html
+	 * fragment.
+	 * 
+	 * @param htmlFragment
+	 * @return
+	 */
+	public static String updateLinkReference(String htmlFragment) {
+		Matcher tagMatcher = anchorTagPattern.matcher(htmlFragment);
+		StringBuffer modifiedSourceHtml = new StringBuffer();
+
+		while (tagMatcher.find()) {
+			String anchorTag = tagMatcher.group();
+			System.out.println("Anchor Tag before replacement is" + anchorTag);
+			String anchorHref = tagMatcher.group(3);
+			System.out
+					.println("Anchor href before replacement is" + anchorHref);
+			String validHrefPath = anchorHref;
+			if (anchorHref.startsWith("http://")
+					|| anchorHref.startsWith("https://")) {
+				continue;
+			} else {
+				validHrefPath = getValidHrefPath(anchorHref);
+				System.out.println("Anchor href after replacement is"
+						+ validHrefPath);
+				String newAnchorTag = anchorTag.replaceFirst(anchorHref,
+						validHrefPath);
+				System.out.println("Anchor tag after replacement is"
+						+ newAnchorTag);
+				tagMatcher.appendReplacement(modifiedSourceHtml, newAnchorTag);
+			}
+		}
+		tagMatcher.appendTail(modifiedSourceHtml);
+		return modifiedSourceHtml.toString();
+	}
+
+	public static String getAssetFolderPathFromURL(final String filePath,
+			final String nodeName) {
+		String fileRef = getNodeTextFromXML(filePath, nodeName);
+		String folderPath = "";
+		if (fileRef.startsWith("/Publications/TaxAdviser/")) {
+			folderPath = getFolderPathForPrintIssues(fileRef);
+			System.out.println("Folder path is" + folderPath);
+		}
+		return folderPath.toLowerCase()
+				.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+				.replaceAll("-+", "-").replaceAll("-$", "");
+	}
+
+	public static String getFolderPathFromURL(final String filePath,
+			final String nodeName) {
+		String fileRef = getNodeTextFromXML(filePath, nodeName);
+		String folderPath = "";
+		if (fileRef.toLowerCase().startsWith(
+				"/Publications/TaxAdviser/".toLowerCase())) {
+			folderPath = getFolderPathForPrintIssues(fileRef);
+			System.out.println("Folder path is" + folderPath);
+		} else if (fileRef.toLowerCase().startsWith(
+				"/InterestAreas/Tax/".toLowerCase())) {
+			folderPath = fileRef
+					.toLowerCase()
+					.replaceFirst(
+							"/InterestAreas/Tax/NewsAndPublications/taxnews/Pages"
+									.toLowerCase(),
+							"");
+			String year = getYearFromArticleDate(filePath, "ArticleStartDate");
+			String month = getMonthFromArticleDate(filePath, "ArticleStartDate");
+			if (year.equals("") && month.equals("")) {
+				String pageName = folderPath.substring(
+						folderPath.lastIndexOf("/") + 1).replaceFirst(".aspx$",
+						"");
+				SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd");
+				try {
+					if (!pageName.equals("default") && pageName.length() > 8) {
+						pageName = pageName.substring(0, 8);
+					}
+					Date dt = format.parse(pageName);
+					Calendar calendar = Calendar.getInstance();
+					calendar.setTime(dt);
+					month = new SimpleDateFormat("MMM").format(
+							calendar.getTime()).toLowerCase();
+					year = String.valueOf(calendar.get(Calendar.YEAR));
+					String day = String.valueOf(calendar
+							.get(Calendar.DAY_OF_MONTH));
+					String monthNum = String.valueOf(calendar
+							.get(Calendar.MONTH));
+					System.out
+							.println("month and page is" + month + " " + year);
+					updateXmlFile(filePath, "ArticleStartDate", monthNum + "/"
+							+ day + "/" + year);
+				} catch (ParseException e) {
+					System.out
+							.println("getFolderPathFromURL Not able to parse the date "
+									+ e.getMessage());
+				}
+			}
+			if (!year.equals("") && !month.equals("")) {
+				folderPath = "/" + year + "/" + month + folderPath;
+				folderPath = folderPath
+						.substring(0, folderPath.lastIndexOf("/") + 1)
+						.replaceFirst("/$", "").trim();
+			} else {
+				folderPath = "";
+			}
+
+		}
+		System.out.println("folder path is" + folderPath);
+		return folderPath.toLowerCase()
+				.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+				.replaceAll("-+", "-").replaceAll("-$", "");
+	}
+
+	public static String getArticlePublishDate(final String filePath,
+			final String nodeName) {
+		String date = getNodeTextFromXML(filePath, nodeName);
+		String articlePublishDate = date;
+		System.out.println("date is" + date);
+		SimpleDateFormat format = new SimpleDateFormat("MM/dd/yyyy");
+		try {
+			Date dt = format.parse(date);
+			articlePublishDate = getAEMSpecificDate(dt,
+					"yyyy-MM-dd'T'HH:mm:ss.SSSZZ");
+			/*
+			 * Calendar calendar = Calendar.getInstance(); calendar.setTime(dt);
+			 * TimeZone zone = TimeZone.getTimeZone("GMT-4"); DateFormat
+			 * requiredDF = new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+			 * requiredDF.setTimeZone(zone); articlePublishDate =
+			 * requiredDF.format(calendar.getTime()); int length =
+			 * articlePublishDate.length(); String start =
+			 * articlePublishDate.substring(0, length - 2); String end =
+			 * articlePublishDate.substring(length - 3, length - 1);
+			 * System.out.println("article publish date is" +
+			 * articlePublishDate); articlePublishDate = start + ":" + end;
+			 */
+		} catch (ParseException e) {
+			System.out
+					.println("getArticlePublishDate Mehtod Not able to parse the date "
+							+ e.getMessage());
+		}
+		return "{Date}" + articlePublishDate;
+	}
+
+	public static String getIssueDate(String year, String month) {
+		SimpleDateFormat format = new SimpleDateFormat("dd-MMM-yyyy");
+		String issueDate = "01-" + month + "-" + year;
+		try {
+			Date dt = format.parse(issueDate);
+			issueDate = getAEMSpecificDate(dt, "yyyy-MM-dd'T'HH:mm:ss.SSSZZ");
+			/*
+			 * Calendar calendar = Calendar.getInstance(); calendar.setTime(dt);
+			 * TimeZone zone = TimeZone.getTimeZone("GMT-4"); DateFormat
+			 * requiredDF = new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+			 * requiredDF.setTimeZone(zone); articlePublishDate =
+			 * requiredDF.format(calendar.getTime()); int length =
+			 * articlePublishDate.length(); String start =
+			 * articlePublishDate.substring(0, length - 2); String end =
+			 * articlePublishDate.substring(length - 3, length - 1);
+			 * System.out.println("article publish date is" +
+			 * articlePublishDate); articlePublishDate = start + ":" + end;
+			 */
+		} catch (ParseException e) {
+			System.out
+					.println("getIssueDate Mehtod Not able to parse the date "
+							+ e.getMessage());
+		}
+		return "{Date}" + issueDate;
+	}
+
+	public static String getAEMSpecificDate(Date dt, String fmt) {
+		DateTimeZone zone = DateTimeZone.forOffsetHours(-5);
+		DateTime dateTime = new LocalDateTime(dt).toDateTime(zone);
+		DateTimeFormatter df = DateTimeFormat.forPattern(fmt).withZone(zone);
+		String modifiedDate = dateTime.toString(df);
+		System.out.println("Modified Date in AEM specific format is"
+				+ modifiedDate);
+		return modifiedDate;
+	}
+
+	public static String getMonthFromArticleDate(final String filePath,
+			final String nodeName) {
+		String date = getNodeTextFromXML(filePath, nodeName);
+		String month = "";
+		System.out.println("date is" + date);
+		SimpleDateFormat format = new SimpleDateFormat("MM/dd/yyyy hh:mm:ss a");
+		try {
+			Date dt = format.parse(date);
+			Calendar calendar = Calendar.getInstance();
+			calendar.setTime(dt);
+			month = new SimpleDateFormat("MMM").format(calendar.getTime())
+					.toLowerCase();
+			System.out.println("month is" + month);
+		} catch (ParseException e) {
+			System.out
+					.println("getMonthFromArticleDate Mehtod Not able to parse the date "
+							+ e.getMessage());
+		}
+		return month;
+	}
+
+	public static String getYearFromArticleDate(final String filePath,
+			final String nodeName) {
+		String date = getNodeTextFromXML(filePath, nodeName);
+		String year = "";
+		System.out.println("date is" + date);
+		SimpleDateFormat format = new SimpleDateFormat("MM/dd/yyyy hh:mm:ss a");
+		try {
+			Date dt = format.parse(date);
+			Calendar calendar = Calendar.getInstance();
+			calendar.setTime(dt);
+			year = String.valueOf(calendar.get(Calendar.YEAR));
+			System.out.println("year is" + year);
+		} catch (ParseException e) {
+			System.out
+					.println("getYearFromArticleDate method Not able to parse the date "
+							+ e.getMessage());
+		}
+		return year;
+	}
+
+	public static void updateURLMap(String filePath, String nodeName) {
+		String fileRef = getNodeTextFromXML(filePath, nodeName);
+		System.out.println("file ref received is" + fileRef);
+		if (fileRef.toLowerCase()
+				.startsWith("/InterestAreas/Tax".toLowerCase())) {
+			// System.out.println("Entered in if " + urlMap);
+			String folderPath = getFolderPathFromURL(filePath, nodeName);
+			String finalURL = fileRef
+					.toLowerCase()
+					.replaceFirst(
+							"/InterestAreas/Tax/NewsAndPublications/taxnews/Pages/"
+									.toLowerCase(),
+							"/content/tta-home/news" + folderPath + "/");
+			finalURL = finalURL.replaceFirst("/$", "")
+					.replaceFirst(".aspx$", ".html").trim();
+			// return replacedText.toLowerCase();
+			finalURL = finalURL.toLowerCase()
+					.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+					.replaceAll("-+", "-").replaceAll("-$", "");
+			System.out.print("Final URL is" + finalURL);
+			urlMap.put(fileRef.toLowerCase(), finalURL);
+			System.out.println("Map created so far is" + urlMap);
+		}
+	}
+
+	public static void main(String[] args) {
+
+		System.out
+				.println(getFileNameFromURL("/Publications/TaxAdviser/2015/july/Pages/Hollingsworth_Jul15.aspx"));
+	}
+
+	public static String getFolderPathForPrintIssues(final String fileRef) {
+
+		String folderPath = fileRef.toLowerCase()
+				.replaceFirst("/Publications/TaxAdviser/".toLowerCase(), "")
+				.replaceFirst("/Pages".toLowerCase(), "")
+				.replaceFirst("/DownloadableDocuments".toLowerCase(), "")
+				.replaceFirst("/PublishingImages".toLowerCase(), "");
+		folderPath = folderPath.substring(0, folderPath.lastIndexOf("/") + 1)
+				.replaceFirst("/$", "").trim();
+		String monthName = folderPath
+				.substring(folderPath.lastIndexOf("/") + 1);
+
+		if (monthName.length() > 3) {
+			// for links like
+			// /Publications/TaxAdviser/2015/july/Pages/Hollingsworth_Jul15.aspx
+			for (Month m : Month.values()) {
+				if (m.toString().equals(monthName.toUpperCase())) {
+					monthName = m.getShortName();
+					folderPath = folderPath.substring(0,
+							folderPath.lastIndexOf("/") + 1)
+							+ monthName;
+					break;
+				}
+			}
+		}
+		System.out.println("Folder path is" + folderPath);
+		return folderPath;
+	}
+
+	public static String getValidHrefPath(final String hrefURL) {
+		String replacedText = hrefURL;
+		if (hrefURL.toLowerCase().startsWith(
+				"/Publications/TaxAdviser/".toLowerCase())) {
+			String fileName = getFileNameFromURL(hrefURL);
+			String folderPath = getFolderPathForPrintIssues(hrefURL);
+			if (hrefURL.endsWith(".aspx")) {
+				replacedText = "/content/tta-home/issues/" + folderPath + "/"
+						+ fileName;
+				replacedText = replacedText.replaceFirst("/$", "")
+						.replaceFirst(".aspx$", ".html").trim();
+				return replacedText.toLowerCase()
+						.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+						.replaceAll("-+", "-").replaceAll("-$", "");
+			} else {
+				replacedText = "/content/dam/tta/issues/" + folderPath + "/"
+						+ fileName;
+				return replacedText.toLowerCase()
+						.replaceAll("[_!\\$@,'\\(\\)#%&+’`{“”}\\*\\s+]", "-")
+						.replaceAll("-+", "-").replaceAll("-$", "");
+			}
+		} else if (hrefURL.toLowerCase().startsWith(
+				"/InterestAreas/Tax/NewsAndPublications/taxnews/Pages"
+						.toLowerCase())) {
+			/*
+			 * String replacedText = hrefURL.replaceFirst(
+			 * "/InterestAreas/Tax/NewsAndPublications/taxnews/Pages/",
+			 * "/content/tta-home/news/"); replacedText =
+			 * replacedText.replaceFirst("/$", "") .replaceFirst(".aspx$",
+			 * ".html").trim(); // return replacedText.toLowerCase(); return
+			 * replacedText.toLowerCase().replaceAll("[_\\(\\)#%&+“”\\s+]",
+			 * "-");
+			 */
+			if (hrefURL.endsWith(".aspx")) {
+				if (urlMap.get(hrefURL.toLowerCase()) != null) {
+					return urlMap.get(hrefURL.toLowerCase());
+				}
+			}
+		} else if (hrefURL.startsWith("/")) {
+			replacedText = "http://www.aicpa.org" + replacedText;
+		}
+		return replacedText;
+	}
+
+	/**
+	 * helloExample: not return value, only print "hello" + message.
+	 * 
+	 * 
+	 * {talendTypes} String
+	 * 
+	 * {Category} User Defined
+	 * 
+	 * {param} string("world") input: The string need to be printed.
+	 * 
+	 * {example} helloExemple("world") # hello world !.
+	 */
+
+	public static void helloExample(String message) {
+		if (message == null) {
+			message = "World"; //$NON-NLS-1$
+		}
+		System.out.println("Hello " + message + " !"); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+}
